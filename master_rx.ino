@@ -1,13 +1,123 @@
-#define DEBUG
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h> 
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
 #include "include.h"
 
-void setup(){
+
+
+/* Set these to your desired credentials. */
+const char *ssid = "GL7";  //ENTER YOUR WIFI SETTINGS
+const char *password = "";
+
+//Link to read data from https://jsonplaceholder.typicode.com/comments?postId=7
+//Web/Server address to read/write from 
+const char *host = "trackmybus-api.herokuapp.com";
+const int httpsPort = 443;  //HTTPS= 443 and HTTP = 80
+
+//SHA1 finger print of certificate use web browser to view and copy
+const char fingerprint[] PROGMEM = "D6 27 27 66 FB 8A 91 E6 31 3A B8 AF B1 79 4B 8F C7 A6 5A DC";
+//=======================================================================
+//                    Power on setup
+//=======================================================================
+
+void setup() {
+  delay(1000);
   Serial.begin(115200);
   LoRa_init(LORA_RXEN);
-  http_init();
+  WiFi.mode(WIFI_OFF);        //Prevents reconnection issue (taking too long to connect)
+  delay(1000);
+  WiFi.mode(WIFI_STA);        //Only Station No AP, This line hides the viewing of ESP as wifi hotspot
+  
+  WiFi.begin(ssid, password);     //Connect to your WiFi router
+  Serial.println("");
+
+  Serial.print("Connecting");
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  //If connection successful show IP address in serial monitor
+  Serial.println("");
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());  //IP address assigned to your ESP
 }
 
-void loop(){
-  http_post("hi");
-  LoRa_Rx();  
+//=======================================================================
+//                    Main Program Loop
+//=======================================================================
+void loop() {
+  int i=0;
+  String lat,lng;
+   LoRa_Rx();
+  WiFiClientSecure httpsClient;    //Declare object of class WiFiClient
+
+  Serial.println(host);
+  httpsClient.setFingerprint(fingerprint);
+  httpsClient.setTimeout(15000); // 15 Seconds
+  delay(1000);
+  
+  Serial.print("HTTPS Connecting");
+  int r=0; //retry counter
+  while((!httpsClient.connect(host, httpsPort)) && (r < 30)){
+      delay(100);
+      Serial.print(".");
+      r++;
+  }
+  if(r==30) {
+    Serial.println("Connection failed");
+  }
+  else {
+    Serial.println("Connected to web");
+  }
+  
+  String getData, Link;
+  
+  //POST Data
+  Link = "/tmb/location";
+
+  
+  /*
+   POST /post HTTP/1.1
+   Host: postman-echo.com
+   Content-Type: application/x-www-form-urlencoded
+   Content-Length: 13
+  
+   say=Hi&to=Mom
+    
+   */
+
+  
+  httpsClient.print(String("POST ") + Link + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" +
+               "Content-Type: application/x-www-form-urlencoded"+ "\r\n" +
+               "Content-Length: 45" + "\r\n\r\n" +
+               "lat="+ str.substring(0, 8) + "&lng=" + str.substring(9,18) +  "&bus=KayamKulam Bus" + "\r\n" +
+               "Connection: close\r\n\r\n");
+
+  Serial.println("request sent");
+                  
+  while (httpsClient.connected()) {
+    String line = httpsClient.readStringUntil('\n');
+    if (line == "\r") {
+      Serial.println("headers received");
+      break;
+    }
+  }
+  
+  Serial.println("reply was:");
+  Serial.println("==========");
+  String line;
+  while(httpsClient.available()){        
+    line = httpsClient.readStringUntil('\n');  //Read Line by Line
+    Serial.println(line); //Print response
+  }
+  Serial.println("==========");
+  Serial.println("closing connection");
+    
+  delay(2000);  //POST Data at every 2 seconds
 }
